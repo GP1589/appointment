@@ -1,0 +1,277 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: API de appointment para Rimac
+
+Globals:
+  Function:
+    Runtime: nodejs22.x
+    Timeout: 30
+    MemorySize: 256
+    Environment:
+      Variables:
+        NODE_ENV: production
+        TABLE_NAME: appointment
+        SNS_TOPIC_ARN: !Ref TopicAppointments
+        RETURN_SQS_URL: !GetAtt ReturnQueue.QueueUrl
+        EVENT_BUS_NAME: !Ref AppointmentEventBus
+
+Resources:
+  ApiFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: temp-code/
+      Handler: index.handler
+      Policies:
+        - SNSPublishMessagePolicy:
+            TopicName: !GetAtt TopicAppointments.TopicName
+        - SQSSendMessagePolicy:
+            QueueName: !GetAtt SQSPE.QueueName
+        - SQSSendMessagePolicy:
+            QueueName: !GetAtt SQSCL.QueueName
+        - SQSSendMessagePolicy:
+            QueueName: !GetAtt ReturnQueue.QueueName
+        - DynamoDBCrudPolicy:
+            TableName: !Ref AppointmentTable
+      Events:
+        ApiEvent:
+          Type: Api
+          Properties:
+            Path: /appointment/{proxy+}
+            Method: ANY
+            RestApiId: !Ref AppointmentApi
+        ApiEventRoot:
+          Type: Api
+          Properties:
+            Path: /appointment
+            Method: ANY
+            RestApiId: !Ref AppointmentApi
+
+  AppointmentPeFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: temp-code/
+      Handler: index.handler
+      Environment:
+        Variables:
+          EVENT_BUS_NAME: !Ref AppointmentEventBus
+      Policies:
+        - SNSPublishMessagePolicy:
+            TopicName: !GetAtt TopicAppointments.TopicName
+        - SQSSendMessagePolicy:
+            QueueName: !GetAtt ReturnQueue.QueueName
+        - DynamoDBCrudPolicy:
+            TableName: !Ref AppointmentTable
+        - EventBridgePutEventsPolicy:
+            EventBusName: !Ref AppointmentEventBus
+      Events:
+        SQSEvent:
+          Type: SQS
+          Properties:
+            Queue: !GetAtt SQSPE.Arn
+            BatchSize: 10
+
+  AppointmentClFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: temp-code/
+      Handler: index.handler
+      Environment:
+        Variables:
+          EVENT_BUS_NAME: !Ref AppointmentEventBus
+      Policies:
+        - SNSPublishMessagePolicy:
+            TopicName: !GetAtt TopicAppointments.TopicName
+        - SQSSendMessagePolicy:
+            QueueName: !GetAtt ReturnQueue.QueueName
+        - DynamoDBCrudPolicy:
+            TableName: !Ref AppointmentTable
+        - EventBridgePutEventsPolicy:
+            EventBusName: !Ref AppointmentEventBus
+      Events:
+        SQSEvent:
+          Type: SQS
+          Properties:
+            Queue: !GetAtt SQSCL.Arn
+            BatchSize: 10
+
+
+  AppointmentReturnFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: temp-code/
+      Handler: index.handler
+      Policies:
+        - SNSPublishMessagePolicy:
+            TopicName: !GetAtt TopicAppointments.TopicName
+        - DynamoDBCrudPolicy:
+            TableName: !Ref AppointmentTable
+      Events:
+        SQSEvent:
+          Type: SQS
+          Properties:
+            Queue: !GetAtt ReturnQueue.Arn
+            BatchSize: 10
+
+  AppointmentTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: appointment
+      AttributeDefinitions:
+        - AttributeName: insuredId
+          AttributeType: S
+        - AttributeName: scheduleId
+          AttributeType: N
+      KeySchema:
+        - AttributeName: insuredId
+          KeyType: HASH
+        - AttributeName: scheduleId
+          KeyType: RANGE
+      BillingMode: PAY_PER_REQUEST
+
+  TopicAppointments:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: TopicAppointments
+
+  SQSPE:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: SQS_PE
+
+  SQSCL:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: SQS_CL
+
+# EventBridge Custom Bus
+  AppointmentEventBus:
+    Type: AWS::Events::EventBus
+    Properties:
+      Name: appointment-event-bus
+
+  # EventBridge Rule para capturar eventos de appointment completion
+  AppointmentCompletionRule:
+    Type: AWS::Events::Rule
+    Properties:
+      EventBusName: !Ref AppointmentEventBus
+      Name: AppointmentCompletionRule
+      Description: Rule to capture appointment completion events
+      EventPattern:
+        source:
+          - "appointment.system"
+        detail-type:
+          - "Appointment Processed"
+        detail:
+          status:
+            - "completed"
+      State: ENABLED
+      Targets:
+        - Arn: !GetAtt ReturnQueue.Arn
+          Id: "ReturnQueueTarget"
+
+  # Policy para permitir que EventBridge envíe mensajes al ReturnQueue
+  ReturnQueuePolicy:
+    Type: AWS::SQS::QueuePolicy
+    Properties:
+      Queues:
+        - !Ref ReturnQueue
+      PolicyDocument:
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: events.amazonaws.com
+            Action: sqs:SendMessage
+            Resource: !GetAtt ReturnQueue.Arn
+            Condition:
+              ArnEquals:
+                aws:SourceArn: !GetAtt AppointmentCompletionRule.Arn
+
+  # Modificar el ReturnQueue para ser FIFO (opcional pero recomendado)
+  # ReturnQueue:
+  #   Type: AWS::SQS::Queue
+  #   Properties:
+  #     QueueName: ReturnQueue.fifo
+  #     FifoQueue: true
+  #     ContentBasedDeduplication: true
+
+  ReturnQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: ReturnQueue
+
+  # Políticas para permitir que SNS envíe mensajes a SQS
+  SQSPEPolicy:
+    Type: AWS::SQS::QueuePolicy
+    Properties:
+      Queues:
+        - !Ref SQSPE
+      PolicyDocument:
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: sns.amazonaws.com
+            Action: sqs:SendMessage
+            Resource: !GetAtt SQSPE.Arn
+            Condition:
+              ArnEquals:
+                aws:SourceArn: !Ref TopicAppointments
+
+  SQSCLPolicy:
+    Type: AWS::SQS::QueuePolicy
+    Properties:
+      Queues:
+        - !Ref SQSCL
+      PolicyDocument:
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: sns.amazonaws.com
+            Action: sqs:SendMessage
+            Resource: !GetAtt SQSCL.Arn
+            Condition:
+              ArnEquals:
+                aws:SourceArn: !Ref TopicAppointments
+
+  SNSSubscriptionPE:
+    Type: AWS::SNS::Subscription
+    Properties:
+      Protocol: sqs
+      Endpoint: !GetAtt SQSPE.Arn
+      TopicArn: !Ref TopicAppointments
+      FilterPolicy:
+        countryISO:
+          - "PE"
+      RawMessageDelivery: true
+
+  SNSSubscriptionCL:
+    Type: AWS::SNS::Subscription
+    Properties:
+      Protocol: sqs
+      Endpoint: !GetAtt SQSCL.Arn
+      TopicArn: !Ref TopicAppointments
+      FilterPolicy:
+        countryISO:
+          - "CL"
+      RawMessageDelivery: true
+
+  AppointmentApi:
+    Type: AWS::Serverless::Api
+    Properties:
+      StageName: dev
+      Cors:
+        AllowMethods: "'*'"
+        AllowHeaders: "'*'"
+        AllowOrigin: "'*'"
+
+Outputs:
+  ApiEndpoint:
+    Description: "API Gateway endpoint URL"
+    Value: !Sub "https://${AppointmentApi}.execute-api.${AWS::Region}.amazonaws.com/dev/appointment"
+    Export:
+      Name: !Sub "${AWS::StackName}-ApiEndpoint"
+  
+  TopicArn:
+    Description: "SNS Topic ARN"
+    Value: !Ref TopicAppointments
+    Export:
+      Name: !Sub "${AWS::StackName}-TopicArn"

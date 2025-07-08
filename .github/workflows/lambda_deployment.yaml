@@ -1,0 +1,86 @@
+name: Deploy Lambda Function
+
+on:
+  push:
+    branches: [ main ]
+
+env:
+  NODE_VERSION: '22'
+  AWS_REGION: 'us-east-1'
+  LAMBDA_FUNCTION_NAME: 'appointment-ApiFunction-kZoj1E3OCnRT'
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Install dependencies
+        run: npm ci
+
+
+      - name: Build TypeScript
+        run: npm run build
+
+      - name: Create deployment package
+        run: |
+          # Crear directorio para el paquete
+          mkdir -p deployment-package
+          
+          # Copiar archivos compilados
+          cp -r dist/* deployment-package/
+          
+          # Copiar node_modules de producción
+          cp -r node_modules deployment-package/
+          
+          # Copiar package.json
+          cp package.json deployment-package/
+          
+          # Crear ZIP
+          cd deployment-package
+          zip -r ../lambda-deployment.zip .
+          cd ..
+
+      - name: Check if Lambda function exists
+        id: check-function
+        run: |
+          if aws lambda get-function --function-name ${{ env.LAMBDA_FUNCTION_NAME }} 2>/dev/null; then
+            echo "exists=true" >> $GITHUB_OUTPUT
+          else
+            echo "exists=false" >> $GITHUB_OUTPUT
+          fi
+
+
+      - name: Update Lambda function code
+        if: steps.check-function.outputs.exists == 'true'
+        run: |
+          aws lambda update-function-code \
+            --function-name ${{ env.LAMBDA_FUNCTION_NAME }} \
+            --zip-file fileb://lambda-deployment.zip \
+            --region ${{ env.AWS_REGION }}
+
+      - name: Wait for deployment to be ready
+        run: |
+          echo "Waiting for Lambda function to be ready..."
+          aws lambda wait function-updated-v2 --function-name ${{ env.LAMBDA_FUNCTION_NAME }}
+          sleep 5
+
+      - name: Clean up
+        if: always()
+        run: |
+          rm -rf deployment-package/
+          rm -f lambda-deployment.zip
