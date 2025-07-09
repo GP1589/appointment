@@ -8,3 +8,6 @@ deploy/
 *.zip
 *.txt
 temp-code/
+
+coverage/
+.vscode/
