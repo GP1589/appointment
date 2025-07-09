@@ -41,22 +41,42 @@ async function handleSqsEvent(event: SQSEvent): Promise<void> {
   for (const record of event.Records) {
     try {
       console.log("Procesando mensaje ID:", record.messageId);
-      const messageBody = JSON.parse(record.body);
-      console.log("Contenido del mensaje:", messageBody);
 
-      // Validación adicional
-      if (!messageBody.insuredId || !messageBody.scheduleId) {
-        throw new Error("Mensaje no contiene los campos requeridos");
-      }
-
-      const result = await appointmentService.completeAppointment(
-        messageBody.insuredId,
-        messageBody.scheduleId
+      // El body puede venir como objeto o como string JSON
+      const messageBody =
+        typeof record.body === "string" ? JSON.parse(record.body) : record.body;
+      console.log(
+        "Contenido del mensaje:",
+        JSON.stringify(messageBody, null, 2)
       );
 
-      console.log("Procesamiento exitoso. Resultado:", result);
+      // Extraer el detalle del mensaje (dependiendo de la estructura)
+      const detail = messageBody.detail || messageBody;
+      console.log("Detalle del mensaje:", JSON.stringify(detail, null, 2));
+
+      // Validación de campos requeridos
+      if (!detail.insuredId || !detail.scheduleId) {
+        throw new Error(
+          "Mensaje no contiene los campos requeridos (insuredId y scheduleId)"
+        );
+      }
+
+      console.log(
+        `Completando cita para insuredId: ${detail.insuredId}, scheduleId: ${detail.scheduleId}`
+      );
+
+      const result = await appointmentService.completeAppointment(
+        detail.insuredId,
+        detail.scheduleId
+      );
+
+      console.log(
+        "Procesamiento exitoso. Resultado:",
+        JSON.stringify(result, null, 2)
+      );
     } catch (error) {
       console.error("Error procesando mensaje:", error);
+      console.error("Mensaje fallido:", JSON.stringify(record, null, 2));
       // Lanza el error para que el mensaje vaya a DLQ si está configurada
       throw error;
     }
