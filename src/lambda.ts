@@ -10,45 +10,97 @@ import { AppointmentService } from "./application/services/AppointmentService";
 import { AppointmentRepository } from "./infrastructure/repositories/implementation/AppointmentRepository";
 import { AppointmentStatus } from "./domain/entities/Appointment";
 
-// Inicializar dependencias una sola vez (fuera del handler)
+// Inicializar dependencias con logs
+console.log("Initializing dependencies...");
 const appointmentRepository = new AppointmentRepository();
+console.log("AppointmentRepository initialized");
 const appointmentService = new AppointmentService(appointmentRepository);
+console.log("AppointmentService initialized");
 
 // Inicializar la app para HTTP
+console.log("Initializing Express app...");
 const app = new App();
+console.log("Express app initialized");
+
 const serverlessApp = serverless(app.getApp(), {
   binary: false,
   request: (request: any, event: APIGatewayProxyEvent, context: Context) => {
+    console.log("Serverless-http request preprocessing");
     request.event = event;
     request.context = context;
+    console.log(
+      `Request details - Path: ${event.path}, Method: ${event.httpMethod}`
+    );
   },
 });
+console.log("Serverless-http wrapper configured");
 
 async function handleSqsEvent(event: SQSEvent): Promise<void> {
-  for (const record of event.Records) {
+  console.log(
+    `Starting to process SQS event with ${event.Records.length} records`
+  );
+
+  for (const [index, record] of event.Records.entries()) {
+    console.log(`Processing record ${index + 1}/${event.Records.length}`);
+    console.log(
+      `Record ID: ${record.messageId}, Event Source: ${record.eventSource}`
+    );
+
     try {
+      console.log("Raw message body:", record.body);
       const messageBody = JSON.parse(record.body);
-      console.log("Processing SQS message:", messageBody);
+      console.log("Parsed message body:", JSON.stringify(messageBody, null, 2));
 
-      // Asume que el mensaje contiene insuredId y scheduleId
+      // Validar estructura del mensaje
+      if (!messageBody.insuredId || !messageBody.scheduleId) {
+        console.error("Invalid message format - missing required fields");
+        throw new Error("Message must contain insuredId and scheduleId");
+      }
+
       const { insuredId, scheduleId } = messageBody;
-
-      await appointmentService.completeAppointment(insuredId, scheduleId);
       console.log(
-        `Appointment completed for insured ${insuredId}, schedule ${scheduleId}`
+        `Starting to complete appointment for insured: ${insuredId}, schedule: ${scheduleId}`
+      );
+
+      const result = await appointmentService.completeAppointment(
+        insuredId,
+        scheduleId
+      );
+      console.log(
+        `Appointment completed successfully. Result: ${JSON.stringify(result)}`
       );
     } catch (error) {
-      console.error("Error processing SQS message:", error);
+      console.error(`Error processing record ${index + 1}:`, error);
+      console.error("Record that failed:", JSON.stringify(record, null, 2));
+
       // Puedes decidir si quieres lanzar el error o continuar con los siguientes mensajes
+      // Para este ejemplo, continuamos con los siguientes mensajes pero lo registramos
     }
   }
+
+  console.log("Finished processing all SQS records");
 }
 
 export const handler = async (
   event: APIGatewayProxyEvent | SQSEvent,
   context: Context
 ): Promise<APIGatewayProxyResult | void> => {
-  console.log("Lambda event:", JSON.stringify(event, null, 2));
+  console.log("=== STARTING LAMBDA EXECUTION ===");
+  console.log(
+    "Lambda context:",
+    JSON.stringify(
+      {
+        functionName: context.functionName,
+        functionVersion: context.functionVersion,
+        invokedFunctionArn: context.invokedFunctionArn,
+        awsRequestId: context.awsRequestId,
+      },
+      null,
+      2
+    )
+  );
+
+  console.log("Raw event received:", JSON.stringify(event, null, 2));
 
   try {
     // Determinar el tipo de evento
@@ -58,24 +110,40 @@ export const handler = async (
       "eventSource" in event.Records[0] &&
       event.Records[0].eventSource === "aws:sqs"
     ) {
-      // Es un evento SQS
+      console.log("Detected SQS event type");
+      console.log(`Number of SQS records: ${event.Records.length}`);
+
       await handleSqsEvent(event as SQSEvent);
+
+      console.log("SQS event processing completed successfully");
       return;
     } else {
-      // Es un evento HTTP (API Gateway)
+      console.log("Detected API Gateway event type");
+      console.log(`HTTP Method: ${(event as APIGatewayProxyEvent).httpMethod}`);
+      console.log(`Path: ${(event as APIGatewayProxyEvent).path}`);
+
       const result = await serverlessApp(
         event as APIGatewayProxyEvent,
         context
       );
-      console.log("Lambda response:", JSON.stringify(result, null, 2));
+
+      console.log("API Gateway processing completed");
+      console.log("Response to be returned:", JSON.stringify(result, null, 2));
+
       return result as APIGatewayProxyResult;
     }
   } catch (error) {
-    console.error("Lambda error:", error);
+    console.error("!!! ERROR IN LAMBDA HANDLER !!!");
+    console.error(
+      "Error details:",
+      error instanceof Error ? error.stack : error
+    );
 
     // Solo devolver respuesta de error si es una petición HTTP
     if (!("Records" in event)) {
-      return {
+      console.error("Returning HTTP 500 error response");
+
+      const errorResponse = {
         statusCode: 500,
         headers: {
           "Content-Type": "application/json",
@@ -93,59 +161,16 @@ export const handler = async (
           },
         }),
       };
+
+      console.log("Error response:", JSON.stringify(errorResponse, null, 2));
+      return errorResponse;
     }
-    // Para eventos SQS, AWS Lambda ya maneja los reintentos según la configuración de la cola
+
+    console.error(
+      "SQS event error - throwing to allow retry or DLQ processing"
+    );
     throw error;
+  } finally {
+    console.log("=== LAMBDA EXECUTION COMPLETED ===");
   }
 };
-
-// import { APIGatewayProxyEvent, APIGatewayProxyResult, Context } from 'aws-lambda';
-// import { App } from './api/app';
-// import serverless from 'serverless-http';
-
-// // Inicializar la app una sola vez (fuera del handler)
-// const app = new App();
-// const serverlessApp = serverless(app.getApp(), {
-//   binary: false,
-//   request: (request: any, event: APIGatewayProxyEvent, context: Context) => {
-//     // Agregar información del evento Lambda al request
-//     request.event = event;
-//     request.context = context;
-//   }
-// });
-
-// export const handler = async (
-//   event: APIGatewayProxyEvent,
-//   context: Context
-// ): Promise<APIGatewayProxyResult> => {
-//   console.log('Lambda event:', JSON.stringify(event, null, 2));
-
-//   try {
-//     // Procesar la petición a través del proxy
-//     const result = await serverlessApp(event, context);
-
-//     console.log('Lambda response:', JSON.stringify(result, null, 2));
-//     return result as APIGatewayProxyResult;
-//   } catch (error) {
-//     console.error('Lambda error:', error);
-
-//     return {
-//       statusCode: 500,
-//       headers: {
-//         'Content-Type': 'application/json',
-//         'Access-Control-Allow-Origin': '*',
-//         'Access-Control-Allow-Headers': 'Content-Type',
-//         'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS'
-//       },
-//       body: JSON.stringify({
-//         success: false,
-//         error: {
-//           message: 'Internal server error',
-//           ...(process.env.NODE_ENV === 'development' && {
-//             details: error instanceof Error ? error.message : String(error)
-//           })
-//         }
-//       })
-//     };
-//   }
-// };
