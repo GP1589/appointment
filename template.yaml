@@ -19,7 +19,7 @@ Resources:
   ApiFunction:
     Type: AWS::Serverless::Function
     Properties:
-      CodeUri: temp-code/
+      CodeUri: dist/
       Handler: index.handler
       Policies:
         - SNSPublishMessagePolicy:
@@ -49,7 +49,7 @@ Resources:
   AppointmentPeFunction:
     Type: AWS::Serverless::Function
     Properties:
-      CodeUri: temp-code/
+      CodeUri: dist/
       Handler: index.handler
       Environment:
         Variables:
@@ -73,7 +73,7 @@ Resources:
   AppointmentClFunction:
     Type: AWS::Serverless::Function
     Properties:
-      CodeUri: temp-code/
+      CodeUri: dist/
       Handler: index.handler
       Environment:
         Variables:
@@ -98,7 +98,7 @@ Resources:
   AppointmentReturnFunction:
     Type: AWS::Serverless::Function
     Properties:
-      CodeUri: temp-code/
+      CodeUri: dist/
       Handler: index.handler
       Policies:
         - SNSPublishMessagePolicy:
