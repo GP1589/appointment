@@ -15,10 +15,6 @@ const options: swaggerJSDoc.Options = {
         url: "http://localhost:5000",
         description: "Development server",
       },
-      {
-        url: "https://3nynf5zwrg.execute-api.us-east-1.amazonaws.com/Stage",
-        description: "Production server (AWS API Gateway)",
-      },
     ],
     components: {
       schemas: {
@@ -73,7 +69,7 @@ const options: swaggerJSDoc.Options = {
             },
             status: {
               type: "string",
-              enum: ["pending", "completed"],
+              enum: ["pending", "completed", "failed"],
               description: "Appointment status",
               example: "pending",
             },
@@ -117,7 +113,7 @@ const options: swaggerJSDoc.Options = {
             },
             status: {
               type: "string",
-              enum: ["pending", "completed", "failed"],
+              enum: ["pending", "completed"],
               description: "Appointment status",
               example: "pending",
             },
@@ -186,110 +182,29 @@ const options: swaggerJSDoc.Options = {
       },
     },
   },
-  apis: [
-    "./routes/*.ts",
-    "./src/api/routes/*.ts",
-    "./dist/api/routes/*.js",
-  ], // Ruta a tus archivos de rutas
+  apis: ["./src/infrastructure/web/routes/*.ts"], // Ruta a tus archivos de rutas
 };
-
 
 const specs = swaggerJSDoc(options);
 
 export const setupSwagger = (app: Application): void => {
-  // Configuración específica para Lambda
-  const swaggerUiAssetPath = require("swagger-ui-dist/absolute-path");
-
   app.use(
     "/api-docs",
     swaggerUi.serve,
     swaggerUi.setup(specs, {
       explorer: true,
       customCss: ".swagger-ui .topbar { display: none }",
-      customSiteTitle: "Medical Appointment API Documentation",
-      swaggerOptions: {
-        // Configuración para manejar CORS en API Gateway
-        requestInterceptor: (req: any) => {
-          req.headers["Accept"] = "application/json";
-          return req;
-        },
-        // Configuración para manejar la URL base en API Gateway
-        url: undefined,
-        urls: [
-          {
-            url: "/api-docs.json",
-            name: "API Documentation",
-          },
-        ],
-      },
+      customSiteTitle: "Appointment API Documentation",
     })
   );
 
   // Endpoint para obtener la especificación en formato JSON
   app.get("/api-docs.json", (req, res) => {
     res.setHeader("Content-Type", "application/json");
-    res.setHeader("Access-Control-Allow-Origin", "*");
-    res.setHeader(
-      "Access-Control-Allow-Methods",
-      "GET, POST, PUT, DELETE, OPTIONS"
-    );
-    res.setHeader(
-      "Access-Control-Allow-Headers",
-      "Content-Type, Authorization"
-    );
     res.send(specs);
   });
 
-  // Endpoint de health check para la documentación
-  app.get("/api-docs/health", (req, res) => {
-    res.json({
-      status: "OK",
-      message: "Swagger documentation is running",
-      timestamp: new Date().toISOString(),
-    });
-  });
-
-  const isLocal =
-    process.env.NODE_ENV === "development" ||
-    process.env.AWS_EXECUTION_ENV === undefined;
-
-  if (isLocal) {
-    console.log(
-      "📚 Swagger documentation available at: http://localhost:5000/api-docs"
-    );
-  } else {
-    console.log(
-      "📚 Swagger documentation available at: https://3nynf5zwrg.execute-api.us-east-1.amazonaws.com/Stage/api-docs"
-    );
-  }
+  console.log(
+    "📚 Swagger documentation available at: http://localhost:5000/api-docs"
+  );
 };
-
-
-
-// const specs = swaggerJSDoc(options);
-
-// export const setupSwagger = (app: Application): void => {
-//   app.use(
-//     "/api-docs",
-//     swaggerUi.serve,
-//     swaggerUi.setup(specs, {
-//       explorer: true,
-//       customCss: ".swagger-ui .topbar { display: none }",
-//       customSiteTitle: "Appointment API Documentation",
-//     })
-//   );
-
-//   // Endpoint para obtener la especificación en formato JSON
-//   app.get("/api-docs.json", (req, res) => {
-//     res.setHeader("Content-Type", "application/json");
-//     res.send(specs);
-//   });
-
-//   console.log(
-//     "📚 Swagger documentation available at: http://localhost:5000/api-docs"
-
-//   );
-//   console.log(
-//     "📚 Swagger documentation available at: https://3nynf5zwrg.execute-api.us-east-1.amazonaws.com/Stage/api-docs"
-//   );
-// };
