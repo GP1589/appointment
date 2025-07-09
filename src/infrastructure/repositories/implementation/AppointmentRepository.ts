@@ -1,4 +1,3 @@
-
 import { IAppointmentRepository } from "../interfaces/IAppointmentRepository";
 import {
   Appointment,
@@ -8,7 +7,6 @@ import {
 import { DynamoDB, SNS } from "aws-sdk";
 import dotenv from "dotenv";
 dotenv.config();
-
 
 export class AppointmentRepository implements IAppointmentRepository {
   private dynamoDb: DynamoDB.DocumentClient;
@@ -39,19 +37,30 @@ export class AppointmentRepository implements IAppointmentRepository {
       })
       .promise();
 
-    // 2. Publicar en SNS con el atributo countryISO
-    await this.sns
-      .publish({
-        TopicArn: this.snsTopicArn,
-        Message: JSON.stringify(newAppointment),
-        MessageAttributes: {
-          countryISO: {
-            DataType: "String",
-            StringValue: newAppointment.countryISO, // "PE" o "CL"
+    // 2. Publicar en SNS
+    try {
+      const snsResponse = await this.sns
+        .publish({
+          TopicArn: this.snsTopicArn,
+          Message: JSON.stringify(newAppointment),
+          MessageAttributes: {
+            countryISO: {
+              DataType: "String",
+              StringValue: newAppointment.countryISO,
+            },
           },
-        },
-      })
-      .promise();
+        })
+        .promise();
+
+      console.log("SNS Response:", snsResponse);
+      // Verifica que tengas un MessageId en la respuesta
+      if (!snsResponse.MessageId) {
+        throw new Error("No se recibió MessageId de SNS");
+      }
+    } catch (error) {
+      console.error("Error al publicar en SNS:", error);
+      throw error; // O maneja el error según tu lógica de negocio
+    }
 
     return newAppointment;
   }

@@ -31,6 +31,17 @@ export class AppointmentService {
     return await this.appointmentRepository.findByInsuredId(insuredId);
   }
 
+  // async completeAppointment(
+  //   insuredId: string,
+  //   scheduleId: number
+  // ): Promise<Appointment | null> {
+  //   return await this.appointmentRepository.updateStatus(
+  //     insuredId,
+  //     scheduleId,
+  //     AppointmentStatus.COMPLETED
+  //   );
+  // }
+  // En tu AppointmentService
   async completeAppointment(
     insuredId: string,
     scheduleId: number
