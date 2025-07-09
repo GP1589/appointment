@@ -4,6 +4,7 @@ import { config } from './infrastructure/config/environment';
 const startServer = (): void => {
   const app = new App();
   const server = app.getApp();
+  
 
   server.listen(config.port, () => {
     console.log(`🚀 Server running on http://localhost:${config.port}`);
