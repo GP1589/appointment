@@ -4,6 +4,11 @@ export enum AppointmentStatus {
   COMPLETED = "completed",
 }
 
+export enum CountryISO {
+  PE = "PE",
+  CL = "CL",
+}
+
 export interface Appointment {
   insuredId: string; // PK en DynamoDB (5 dígitos)
   scheduleId: number; // SK en DynamoDB
