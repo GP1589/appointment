@@ -7,7 +7,10 @@ export const createAppointmentRoutes = (
   const router = Router();
 
   router.post("/create", appointmentController.createAppointment);
-  router.get("/getAppointmentsByInsuredId", appointmentController.getAppointmentsByInsuredId);
+  router.get(
+    "/getAppointmentsByInsuredId/:insuredId",
+    appointmentController.getAppointmentsByInsuredId
+  );
 
   return router;
 };
