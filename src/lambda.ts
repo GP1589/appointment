@@ -36,49 +36,31 @@ const serverlessApp = serverless(app.getApp(), {
 console.log("Serverless-http wrapper configured");
 
 async function handleSqsEvent(event: SQSEvent): Promise<void> {
-  console.log(
-    `Starting to process SQS event with ${event.Records.length} records`
-  );
+  console.log(`Inicio procesamiento SQS - ${event.Records.length} mensajes`);
 
-  for (const [index, record] of event.Records.entries()) {
-    console.log(`Processing record ${index + 1}/${event.Records.length}`);
-    console.log(
-      `Record ID: ${record.messageId}, Event Source: ${record.eventSource}`
-    );
-
+  for (const record of event.Records) {
     try {
-      console.log("Raw message body:", record.body);
+      console.log("Procesando mensaje ID:", record.messageId);
       const messageBody = JSON.parse(record.body);
-      console.log("Parsed message body:", JSON.stringify(messageBody, null, 2));
+      console.log("Contenido del mensaje:", messageBody);
 
-      // Validar estructura del mensaje
+      // Validación adicional
       if (!messageBody.insuredId || !messageBody.scheduleId) {
-        console.error("Invalid message format - missing required fields");
-        throw new Error("Message must contain insuredId and scheduleId");
+        throw new Error("Mensaje no contiene los campos requeridos");
       }
 
-      const { insuredId, scheduleId } = messageBody;
-      console.log(
-        `Starting to complete appointment for insured: ${insuredId}, schedule: ${scheduleId}`
-      );
-
       const result = await appointmentService.completeAppointment(
-        insuredId,
-        scheduleId
+        messageBody.insuredId,
+        messageBody.scheduleId
       );
-      console.log(
-        `Appointment completed successfully. Result: ${JSON.stringify(result)}`
-      );
-    } catch (error) {
-      console.error(`Error processing record ${index + 1}:`, error);
-      console.error("Record that failed:", JSON.stringify(record, null, 2));
 
-      // Puedes decidir si quieres lanzar el error o continuar con los siguientes mensajes
-      // Para este ejemplo, continuamos con los siguientes mensajes pero lo registramos
+      console.log("Procesamiento exitoso. Resultado:", result);
+    } catch (error) {
+      console.error("Error procesando mensaje:", error);
+      // Lanza el error para que el mensaje vaya a DLQ si está configurada
+      throw error;
     }
   }
-
-  console.log("Finished processing all SQS records");
 }
 
 export const handler = async (
